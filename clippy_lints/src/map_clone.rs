@@ -10,12 +10,13 @@
 use crate::rustc::hir;
 use crate::rustc::lint::{LateContext, LateLintPass, LintArray, LintPass};
 use crate::rustc::{declare_tool_lint, lint_array};
+use crate::rustc::ty;
 use crate::rustc_errors::Applicability;
 use crate::syntax::ast::Ident;
 use crate::syntax::source_map::Span;
 use crate::utils::paths;
 use crate::utils::{
-    in_macro, match_trait_method, match_type, remove_blocks, snippet_with_applicability, span_lint_and_sugg,
+    in_macro, match_trait_method, match_type, remove_blocks, snippet_with_applicability, span_lint_and_sugg, walk_ptrs_ty,
 };
 use if_chain::if_chain;
 
@@ -64,12 +65,41 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for Pass {
             return;
         }
 
+        fn is_item_ref(cx: &LateContext<'_, '_>, item: &ty::AssociatedItem) -> bool {
+            if let ty::AssociatedKind::Type = item.kind {
+                if item.ident.name == "Item" {
+                    if let ty::Ref(..) = cx.tcx.type_of(item.container.id()).sty {
+                        return true
+                    }
+                }
+            }
+            false
+        }
+
         if_chain! {
             if let hir::ExprKind::MethodCall(ref method, _, ref args) = e.node;
             if args.len() == 2;
             if method.ident.as_str() == "map";
             let ty = cx.tables.expr_ty(&args[0]);
             if match_type(cx, ty, &paths::OPTION) || match_trait_method(cx, e, &paths::ITERATOR);
+
+            // TODO if is_iterator
+            // if let Some(trait_id) = get_trait_def_id(cx, &paths::ITERATOR);
+            // let expr_ty = cx.tables.expr_ty(e);
+            // let trt_id = cx.tcx.trait_of_item(e.def_id()); //wrong: e isn't a trait item
+            // let item = cx.tcx.associated_item(trt_id);
+            // if implements_trait(cx, cx.tables.expr_ty(e), &[]);
+            // if implements_trait(cx, expr_ty, get_trait_def_id(cx, &paths::ITERATOR).unwrap(), );
+// projection?
+
+            let ty = &walk_ptrs_ty(cx.tables.expr_ty(e));
+            if let ty::Projection(ref proj) = ty.sty;
+            if cx.tcx
+                .inherent_impls(proj.item_def_id)
+                .iter()
+                .any(|imp| cx.tcx.associated_items(*imp).any(|item| is_item_ref(cx, &item)));
+
+
             if let hir::ExprKind::Closure(_, _, body_id, _, _) = args[1].node;
             let closure_body = cx.tcx.hir().body(body_id);
             let closure_expr = remove_blocks(&closure_body.value);
