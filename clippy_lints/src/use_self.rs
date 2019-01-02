@@ -67,6 +67,7 @@ impl LintPass for UseSelf {
 const SEGMENTS_MSG: &str = "segments should be composed of at least 1 element";
 
 fn span_use_self_lint(cx: &LateContext<'_, '_>, path: &Path) {
+    println!("span_use_self_lint: {:?}", path);
     span_lint_and_sugg(
         cx,
         USE_SELF,
@@ -103,6 +104,7 @@ impl<'a, 'tcx> Visitor<'tcx> for TraitImplTyVisitor<'a, 'tcx> {
                         };
 
                         if !is_self_ty {
+                            println!("visit_ty: {:?}", path);
                             span_use_self_lint(self.cx, path);
                         }
                     }
@@ -190,12 +192,16 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UseSelf {
                 };
 
                 if should_check {
+                    println!("check_item: {:?}", item);
+                    println!("item_path: {:?}", item_path);
                     let visitor = &mut UseSelfVisitor {
                         item_path,
                         cx,
                     };
                     let impl_def_id = cx.tcx.hir().local_def_id(item.id);
+                    println!("impl_def_id: {:?}", impl_def_id);
                     let impl_trait_ref = cx.tcx.impl_trait_ref(impl_def_id);
+                    println!("impl_trait_ref: {:?}", impl_trait_ref);
 
                     if let Some(impl_trait_ref) = impl_trait_ref {
                         for impl_item_ref in refs {
@@ -203,17 +209,21 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for UseSelf {
                             if let ImplItemKind::Method(MethodSig{ decl: impl_decl, .. }, impl_body_id)
                                     = &impl_item.node {
                                 let item_type = cx.tcx.type_of(impl_def_id);
+                                println!("item_type: {:?}", item_type);
                                 check_trait_method_impl_decl(cx, item_type, impl_item, impl_decl, &impl_trait_ref);
 
                                 let body = cx.tcx.hir().body(*impl_body_id);
+                                println!("body: {:?}", body);
                                 visitor.visit_body(body);
                             } else {
+                                println!("impl_item: {:?}", impl_item);
                                 visitor.visit_impl_item(impl_item);
                             }
                         }
                     } else {
                         for impl_item_ref in refs {
                             let impl_item = cx.tcx.hir().impl_item(impl_item_ref.id);
+                            println!("impl_item: {:?}", impl_item);
                             visitor.visit_impl_item(impl_item);
                         }
                     }
@@ -232,9 +242,18 @@ impl<'a, 'tcx> Visitor<'tcx> for UseSelfVisitor<'a, 'tcx> {
     fn visit_path(&mut self, path: &'tcx Path, _id: HirId) {
         if path.segments.last().expect(SEGMENTS_MSG).ident.name != SelfUpper.name() {
             if self.item_path.def == path.def {
-                span_use_self_lint(self.cx, path);
+                if let Some(Def::Err) = path.segments[0].def {
+                    //TODO too many hits
+                } else {
+                    println!("visit_path: {:?} {:?} {:?}", path.segments, path.def, path.def.kind_name());
+                    // if let Some(def) = path.segments[0].def.map(|d| self.cx.tcx.def_id(d)) {
+                    //     println!("def: {:?}", def);
+                    // }
+                    span_use_self_lint(self.cx, path);
+                }
             } else if let Def::StructCtor(ctor_did, CtorKind::Fn) = path.def {
                 if self.item_path.def.opt_def_id() == self.cx.tcx.parent_def_id(ctor_did) {
+                    println!("visit_path_2: {:?}", path);
                     span_use_self_lint(self.cx, path);
                 }
             }
