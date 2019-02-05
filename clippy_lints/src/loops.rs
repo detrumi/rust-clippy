@@ -535,7 +535,7 @@ impl<'a, 'tcx> LateLintPass<'a, 'tcx> for Pass {
                                 // 1) it was ugly with big bodies;
                                 // 2) it was not indented properly;
                                 // 3) it wasn’t very smart (see #675).
-                                let mut applicability = Applicability::MachineApplicable;
+                                let mut applicability = Applicability::HasPlaceholders;
                                 span_lint_and_sugg(
                                     cx,
                                     WHILE_LET_LOOP,
